@@ -69,7 +69,10 @@ private:
     bool valid_ = false;
     TraceHeader header_;
     std::vector<Event> events_;
-    
+
+    // String pool for event labels (RAII-compliant memory management)
+    std::vector<std::unique_ptr<char[]>> string_pool_;
+
     // Cached memory analysis state
     mutable bool memory_stats_dirty_ = true;
     mutable MemoryStats cached_memory_stats_;

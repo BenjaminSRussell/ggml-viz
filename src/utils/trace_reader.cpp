@@ -72,12 +72,13 @@ bool TraceReader::load_events() {
             uint32_t label_len;
             if (fread(&label_len, sizeof(label_len), 1, file_) != 1) break;
 
-            // TODO: Implement string pool for labels
-            std::vector<char> label_buf(label_len + 1);
-            if (fread(label_buf.data(), 1, label_len, file_) != label_len) break;
-            label_buf[label_len] = '\0';
+            // Use string pool for RAII-compliant memory management
+            auto label_storage = std::make_unique<char[]>(label_len + 1);
+            if (fread(label_storage.get(), 1, label_len, file_) != label_len) break;
+            label_storage[label_len] = '\0';
 
-            event.label = strdup(label_buf.data()); // TODO: Use a string pool instead of strdup to manage string lifetime properly
+            event.label = label_storage.get();
+            string_pool_.push_back(std::move(label_storage));
         } else {
             event.label = nullptr;
         }

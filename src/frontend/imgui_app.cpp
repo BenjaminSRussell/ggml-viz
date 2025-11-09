@@ -54,7 +54,12 @@ int ImGuiApp::run() {
     if (!initialize()) {
         return -1;
     }
-    
+
+    if (!data_->window) {
+        std::cerr << "[ImGuiApp] ERROR: Window creation failed\n";
+        return -1;
+    }
+
     // Main loop
     while (!glfwWindowShouldClose(data_->window)) {
         glfwPollEvents();
@@ -429,10 +434,10 @@ void ImGuiApp::render_main_menu_bar() {
         }
         
         if (ImGui::BeginMenu("View")) {
-            if (ImGui::MenuItem("Timeline", nullptr, &show_timeline_, data_->trace_loaded)) {}
-            if (ImGui::MenuItem("Graph", nullptr, &show_graph_, data_->trace_loaded)) {}
-            if (ImGui::MenuItem("Tensor Inspector", nullptr, &show_tensor_inspector_, data_->trace_loaded)) {}
-            if (ImGui::MenuItem("Memory View", nullptr, &show_memory_view_, data_->trace_loaded)) {}
+            if (ImGui::MenuItem("Timeline", nullptr, &show_timeline_, data_->trace_loaded || data_->live_mode)) {}
+            if (ImGui::MenuItem("Graph", nullptr, &show_graph_, data_->trace_loaded || data_->live_mode)) {}
+            if (ImGui::MenuItem("Tensor Inspector", nullptr, &show_tensor_inspector_, data_->trace_loaded || data_->live_mode)) {}
+            if (ImGui::MenuItem("Memory View", nullptr, &show_memory_view_, data_->trace_loaded || data_->live_mode)) {}
             ImGui::Separator();
             ImGui::MenuItem("Demo Window", nullptr, &show_demo_window_);
             ImGui::EndMenu();
@@ -446,11 +451,21 @@ void ImGuiApp::render_main_menu_bar() {
         }
         
         // Status in menu bar
-        if (data_->trace_loaded) {
-            ImGui::SameLine(ImGui::GetWindowWidth() - 300);
-            ImGui::Text("Loaded: %s (%zu events)", 
-                       data_->current_filename.c_str(), 
-                       data_->trace_reader->event_count());
+        if (data_->trace_loaded || data_->live_mode) {
+            ImGui::SameLine(ImGui::GetWindowWidth() - 350);
+            if (data_->live_mode) {
+                try {
+                    auto& hook = GGMLHook::instance();
+                    const char* status = hook.is_active() ? "✅" : "❌";
+                    ImGui::Text("%s Live: %zu events", status, data_->live_events.size());
+                } catch (...) {
+                    ImGui::Text("Live: %zu events", data_->live_events.size());
+                }
+            } else {
+                ImGui::Text("Loaded: %s (%zu events)",
+                           data_->current_filename.c_str(),
+                           data_->trace_reader->event_count());
+            }
         }
         
         ImGui::EndMainMenuBar();
@@ -485,6 +500,11 @@ void ImGuiApp::render_file_browser() {
 
 bool ImGuiApp::load_trace_file(const std::string& filename) {
     try {
+        // First, disable live mode if active (mutual exclusion)
+        if (data_->live_mode) {
+            disable_live_mode();
+        }
+
         // First check if file exists and is accessible
         FILE* test_file = fopen(filename.c_str(), "rb");
         if (!test_file) {
