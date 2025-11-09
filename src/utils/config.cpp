@@ -298,12 +298,19 @@ void Config::merge_from(const Config& other) {
 
 // Environment variable overrides
 void Config::apply_env_overrides() {
+    // Helper to parse boolean environment variables
+    auto parse_bool_env = [](const char* value) -> bool {
+        if (!value) return false;
+        std::string str(value);
+        return (str == "1" || str == "true" || str == "TRUE" || str == "on" || str == "ON");
+    };
+
     const char* env_output = std::getenv("GGML_VIZ_OUTPUT");
     if (env_output) {
         output.filename = env_output;
         output.write_to_file = true;
     }
-    
+
     const char* env_max_events = std::getenv("GGML_VIZ_MAX_EVENTS");
     if (env_max_events) {
         try {
@@ -312,17 +319,39 @@ void Config::apply_env_overrides() {
             std::cerr << "[GGML_VIZ] Warning: Invalid GGML_VIZ_MAX_EVENTS value, using default\n";
         }
     }
-    
+
     const char* env_verbose = std::getenv("GGML_VIZ_VERBOSE");
-    if (env_verbose && (std::string(env_verbose) == "1" || std::string(env_verbose) == "true")) {
+    if (env_verbose && parse_bool_env(env_verbose)) {
         logging.level = ConfigLogLevel::DEBUG;
     }
-    
+
     const char* env_disable = std::getenv("GGML_VIZ_DISABLE");
-    if (env_disable && (std::string(env_disable) == "1" || std::string(env_disable) == "true")) {
+    if (env_disable && parse_bool_env(env_disable)) {
         instrumentation.enable_op_timing = false;
         instrumentation.enable_memory_tracking = false;
         output.write_to_file = false;
+    }
+
+    // Legacy environment variables for backward compatibility
+    const char* env_op_timing = std::getenv("GGML_VIZ_OP_TIMING");
+    if (env_op_timing) {
+        instrumentation.enable_op_timing = parse_bool_env(env_op_timing);
+    }
+
+    const char* env_memory_tracking = std::getenv("GGML_VIZ_MEMORY_TRACKING");
+    if (env_memory_tracking) {
+        instrumentation.enable_memory_tracking = parse_bool_env(env_memory_tracking);
+    }
+
+    // GGML_VIZ_THREAD_TRACKING was renamed to MEMORY_TRACKING, support both
+    const char* env_thread_tracking = std::getenv("GGML_VIZ_THREAD_TRACKING");
+    if (env_thread_tracking) {
+        instrumentation.enable_memory_tracking = parse_bool_env(env_thread_tracking);
+    }
+
+    const char* env_tensor_names = std::getenv("GGML_VIZ_TENSOR_NAMES");
+    if (env_tensor_names) {
+        instrumentation.record_tensor_names = parse_bool_env(env_tensor_names);
     }
 }
 

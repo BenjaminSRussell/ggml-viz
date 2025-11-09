@@ -73,25 +73,16 @@ struct AutoInitializer {
         
         try {
             g_auto_initialized = true;
-            
-            // Parse configuration from environment variables
-            HookConfig config;
-            config.enable_op_timing = parse_bool_env("GGML_VIZ_OP_TIMING", true);
-            config.enable_thread_tracking = parse_bool_env("GGML_VIZ_THREAD_TRACKING", false);
-            config.enable_tensor_names = parse_bool_env("GGML_VIZ_TENSOR_NAMES", true);
-            config.write_to_file = true;
-            config.output_filename = output_file;
-            config.max_events = parse_int_env("GGML_VIZ_MAX_EVENTS", 10000000); // 10M events default
-            
-            log_message("Initializing GGML visualization with configuration:");
+
+            log_message("Initializing GGML visualization");
             log_message("  Output file: " + std::string(output_file));
-            log_message("  Op timing: " + std::string(config.enable_op_timing ? "enabled" : "disabled"));
-            log_message("  Thread tracking: " + std::string(config.enable_thread_tracking ? "enabled" : "disabled"));
-            log_message("  Tensor names: " + std::string(config.enable_tensor_names ? "enabled" : "disabled"));
-            log_message("  Max events: " + std::to_string(config.max_events));
-            
-            // Initialize the hook
-            GGMLHook::instance().configure(config);
+            log_message("  Configuration loaded from environment variables");
+
+            // Initialize the hook - ConfigManager will automatically load settings from:
+            // 1. GGML_VIZ_CONFIG environment variable (if set)
+            // 2. Environment variable overrides (GGML_VIZ_OP_TIMING, etc.)
+            // 3. Default values
+            // The Config::apply_env_overrides() method handles all legacy env vars
             GGMLHook::instance().start();
             
             // Install the GGML hooks for function interception

@@ -130,27 +130,14 @@ void ImGuiApp::enable_live_mode(bool no_hook, const std::string& trace_file) {
     if (!no_hook) {
         try {
             auto& hook = GGMLHook::instance();
-            
-            // Configure the hook
-            HookConfig config;
-            config.enable_op_timing = true;
-            config.enable_thread_tracking = false;
-            config.enable_tensor_names = true;
-            config.write_to_file = false;  // Don't write to file in live mode
-            config.max_events = 100000;   // Buffer for live events
-            
-            hook.configure(config);
+
+            // Start the hook - configuration is handled automatically by ConfigManager
+            // The hook will use settings from: CLI > config file > env vars > defaults
             hook.start();
-            
+
             std::cout << "[ImGuiApp] Live mode enabled and GGML hook started" << std::endl;
             std::cout << "[ImGuiApp] Hook active: " << (hook.is_active() ? "YES" : "NO") << std::endl;
-            std::cout << "[ImGuiApp] DEBUG: Configuration applied:" << std::endl;
-            std::cout << "[ImGuiApp]   - Op timing: " << (config.enable_op_timing ? "ENABLED" : "DISABLED") << std::endl;
-            std::cout << "[ImGuiApp]   - Thread tracking: " << (config.enable_thread_tracking ? "ENABLED" : "DISABLED") << std::endl;
-            std::cout << "[ImGuiApp]   - Tensor names: " << (config.enable_tensor_names ? "ENABLED" : "DISABLED") << std::endl;
-            std::cout << "[ImGuiApp]   - Write to file: " << (config.write_to_file ? "ENABLED" : "DISABLED") << std::endl;
-            std::cout << "[ImGuiApp]   - Max events: " << config.max_events << std::endl;
-            
+
         } catch (const std::exception& e) {
             std::cerr << "[ImGuiApp] Error starting GGML hook: " << e.what() << std::endl;
         }
