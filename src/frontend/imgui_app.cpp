@@ -1,4 +1,3 @@
-// src/frontend/imgui_app.cpp
 #include "imgui_app.hpp"
 #include "utils/trace_reader.hpp"
 #include "instrumentation/ggml_hook.hpp"
@@ -21,19 +20,16 @@ struct ImGuiApp::AppData {
     std::string current_filename;
     std::string error_message;
 
-    // UI state
     bool trace_loaded = false;
     int selected_event = -1;
 
-    // Live mode support
     bool live_mode = false;
-    bool live_mode_no_hook = false;  // Track if we're using --no-hook flag
+    bool live_mode_no_hook = false;
     std::vector<Event> live_events;
 
     std::chrono::steady_clock::time_point last_live_update;
     std::atomic<bool> live_data_available{false};
 
-    // File monitoring for external processes
     std::string live_file_path;
     std::time_t last_file_mod_time = 0;
     size_t last_file_size = 0;
@@ -41,14 +37,11 @@ struct ImGuiApp::AppData {
     std::chrono::steady_clock::time_point last_file_check_time;
     std::unique_ptr<TraceReader> live_trace_reader;
 
-    // File browser state
     static constexpr size_t FILE_PATH_BUFFER_SIZE = 512;
     char file_path_buffer[FILE_PATH_BUFFER_SIZE] = {0};
 
-    // Constants
     static constexpr size_t MAX_LIVE_EVENTS = 50'000;
 
-    // Helper methods
     void limit_live_events_buffer() {
         if (live_events.size() > MAX_LIVE_EVENTS) {
             live_events.erase(
@@ -75,80 +68,68 @@ int ImGuiApp::run() {
         std::cerr << "[ImGuiApp] ERROR: Failed to create window\n";
         return -1;
     }
-    
-    // Main loop
+
     while (!glfwWindowShouldClose(data_->window)) {
         glfwPollEvents();
         render_frame();
     }
-    
+
     shutdown();
     return 0;
 }
 
 bool ImGuiApp::initialize() {
-    // Initialize GLFW
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW\n";
         return false;
     }
-    
-    // Set GLFW window hints for OpenGL 3.3
+
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    
+
 #ifdef __APPLE__
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
-    
-    // Create window
+
     data_->window = glfwCreateWindow(1280, 720, "GGML Visualizer", nullptr, nullptr);
     if (!data_->window) {
         std::cerr << "Failed to create GLFW window\n";
         glfwTerminate();
         return false;
     }
-    
+
     glfwMakeContextCurrent(data_->window);
-    glfwSwapInterval(1); // Enable vsync
-    
-    // Setup Dear ImGui context
+    glfwSwapInterval(1);
+
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    
-    // Enable docking if available (requires docking branch of ImGui)
+
 #ifdef IMGUI_HAS_DOCK
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;     // Enable Docking
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;   // Enable Multi-Viewport
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 #endif
-    
-    // Setup Dear ImGui style
+
     ImGui::StyleColorsDark();
-    
-    // Setup Platform/Renderer backends
+
     ImGui_ImplGlfw_InitForOpenGL(data_->window, true);
     ImGui_ImplOpenGL3_Init("#version 150");
-    
+
     return true;
 }
 
 void ImGuiApp::enable_live_mode(bool no_hook, const std::string& trace_file) {
     data_->live_mode = true;
-    data_->live_mode_no_hook = no_hook;  // Store the no_hook flag
+    data_->live_mode_no_hook = no_hook;
     data_->live_events.clear();
     data_->last_live_update = std::chrono::steady_clock::now();
     data_->current_filename = "[Live Mode]";
-    
-    // Initialize and start the GGML hook (unless disabled)
+
     if (!no_hook) {
         try {
             auto& hook = GGMLHook::instance();
-
-            // Start the hook - configuration is handled automatically by ConfigManager
-            // The hook will use settings from: CLI > config file > env vars > defaults
             hook.start();
 
             std::cout << "[ImGuiApp] Live mode enabled and GGML hook started" << std::endl;
@@ -160,9 +141,7 @@ void ImGuiApp::enable_live_mode(bool no_hook, const std::string& trace_file) {
     } else {
         std::cout << "[ImGuiApp] Live mode enabled with built-in hook disabled (--no-hook)" << std::endl;
     }
-    
-    // Set up file monitoring for external processes
-    // Priority: 1) command line argument, 2) environment variable, 3) default
+
     if (!trace_file.empty()) {
         data_->live_file_path = trace_file;
         std::cout << "[ImGuiApp] Monitoring specified trace file: " << data_->live_file_path << std::endl;
@@ -172,7 +151,6 @@ void ImGuiApp::enable_live_mode(bool no_hook, const std::string& trace_file) {
             data_->live_file_path = env_output;
             std::cout << "[ImGuiApp] Monitoring external trace file: " << data_->live_file_path << std::endl;
         } else {
-            // Default to monitoring a temporary file
             data_->live_file_path = "test.ggmlviz";
             std::cout << "[ImGuiApp] No GGML_VIZ_OUTPUT set, monitoring default: " << data_->live_file_path << std::endl;
             std::cout << "[ImGuiApp] NOTE: 0 events is expected until you run a GGML application" << std::endl;
@@ -180,7 +158,7 @@ void ImGuiApp::enable_live_mode(bool no_hook, const std::string& trace_file) {
         }
     }
     
-    // Initialize file monitoring state
+
     data_->last_file_mod_time = 0;
     data_->last_file_size = 0;
 }
@@ -189,7 +167,7 @@ void ImGuiApp::disable_live_mode() {
     data_->live_mode = false;
     data_->live_events.clear();
     
-    // Stop the GGML hook (if it was started)
+
     try {
         auto& hook = GGMLHook::instance();
         if (hook.is_active()) {
@@ -202,7 +180,7 @@ void ImGuiApp::disable_live_mode() {
         std::cerr << "[ImGuiApp] Error stopping GGML hook: " << e.what() << std::endl;
     }
     
-    // Clean up file monitoring
+
     data_->live_file_path.clear();
     data_->last_file_mod_time = 0;
     data_->last_file_size = 0;
@@ -216,18 +194,14 @@ bool ImGuiApp::is_live_mode() const {
 void ImGuiApp::update_live_data() {
     if (!data_->live_mode) return;
 
-    // Try to get live events from GGMLHook (in-process events)
     try {
         auto& hook = GGMLHook::instance();
         if (hook.is_active()) {
             auto new_events = hook.consume_available_events();
             if (!new_events.empty()) {
-                // Add new events to our live buffer
                 data_->live_events.insert(data_->live_events.end(), new_events.begin(), new_events.end());
                 data_->last_live_update = std::chrono::steady_clock::now();
                 data_->live_data_available = true;
-
-                // Limit buffer size to prevent memory issues
                 data_->limit_live_events_buffer();
             }
         }
@@ -235,43 +209,33 @@ void ImGuiApp::update_live_data() {
         std::cerr << "[ImGuiApp] Error updating live data from hook: " << e.what() << std::endl;
     }
 
-
-    // Also monitor external trace file for events from external processes
-    // Only check file every 100ms to avoid too frequent polling
     auto now = std::chrono::steady_clock::now();
     auto time_since_last_check = std::chrono::duration_cast<std::chrono::milliseconds>(now - data_->last_file_check_time);
 
     if (!data_->live_file_path.empty() && time_since_last_check.count() > 100) {
         data_->last_file_check_time = now;
-        
+
         try {
             struct stat file_stat;
             if (stat(data_->live_file_path.c_str(), &file_stat) == 0) {
-                // Check if file has been modified
-                if (file_stat.st_mtime > data_->last_file_mod_time || 
+                if (file_stat.st_mtime > data_->last_file_mod_time ||
                     static_cast<size_t>(file_stat.st_size) > data_->last_file_size) {
-                    
-                    // File has been updated, reload it
-                    std::cout << "[ImGuiApp] File changed - reloading: " << data_->live_file_path 
+
+                    std::cout << "[ImGuiApp] File changed - reloading: " << data_->live_file_path
                               << " (size: " << file_stat.st_size << " bytes)" << std::endl;
                     auto new_trace_reader = std::make_unique<TraceReader>(data_->live_file_path);
                     if (new_trace_reader->is_valid()) {
                         const auto& events = new_trace_reader->events();
-
-                        // Handle file recreation/truncation by detecting if file has fewer events than expected
                         size_t start_idx = 0;
 
                         if (data_->live_trace_reader && events.size() >= data_->last_file_event_count) {
-                            // File appears to be growing normally, only load new events
                             start_idx = data_->last_file_event_count;
                         } else {
-                            // File was recreated/truncated or this is first load, load all events
                             start_idx = 0;
                             std::cout << "[ImGuiApp] File appears to be recreated/truncated, loading all events" << std::endl;
                         }
 
                         if (events.size() > start_idx) {
-                            // Add new events to our live buffer
                             size_t new_event_count = events.size() - start_idx;
                             data_->live_events.insert(data_->live_events.end(),
                                                      events.begin() + start_idx, events.end());
@@ -287,12 +251,9 @@ void ImGuiApp::update_live_data() {
                                       << " events, last processed: " << data_->last_file_event_count << ")" << std::endl;
                         }
 
-                        // Update file monitoring state
                         data_->last_file_mod_time = file_stat.st_mtime;
                         data_->last_file_size = file_stat.st_size;
                         data_->live_trace_reader = std::move(new_trace_reader);
-
-                        // Limit buffer size to prevent memory issues
                         data_->limit_live_events_buffer();
                     }
                 }
@@ -316,29 +277,29 @@ void ImGuiApp::shutdown() {
 }
 
 void ImGuiApp::render_frame() {
-    // Update live data if in live mode
+
     update_live_data();
     
-    // Start the Dear ImGui frame
+
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
     
-    // Enable docking if available
+
 #ifdef IMGUI_HAS_DOCK
     ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
 #endif
     
-    // Render main menu bar
+
     render_main_menu_bar();
     
-    // Check for hook status and show notification if needed
+
     render_hook_status_notification();
     
-    // Render stats overlay
+
     render_stats_overlay();
     
-    // Render GUI panels
+
     if (show_file_browser_) {
         render_file_browser();
     }
@@ -358,12 +319,12 @@ void ImGuiApp::render_frame() {
         }
     }
     
-    // Show ImGui demo window if requested
+
     if (show_demo_window_) {
         ImGui::ShowDemoWindow(&show_demo_window_);
     }
     
-    // Error popup
+
     if (!data_->error_message.empty()) {
         ImGui::OpenPopup("Error");
         if (ImGui::BeginPopupModal("Error", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
@@ -376,7 +337,7 @@ void ImGuiApp::render_frame() {
         }
     }
     
-    // Rendering
+
     ImGui::Render();
     int display_w, display_h;
     glfwGetFramebufferSize(data_->window, &display_w, &display_h);
@@ -417,12 +378,12 @@ void ImGuiApp::render_main_menu_bar() {
         
         if (ImGui::BeginMenu("Help")) {
             if (ImGui::MenuItem("About")) {
-                // TODO: Implement about dialog
+
             }
             ImGui::EndMenu();
         }
         
-        // Status in menu bar
+
         if (data_->trace_loaded || data_->live_mode) {
             ImGui::SameLine(ImGui::GetWindowWidth() - 350);
             if (data_->live_mode) {
@@ -463,7 +424,7 @@ void ImGuiApp::render_file_browser() {
             show_file_browser_ = false;
         }
         
-        // TODO: Add proper file browser with directory listing
+
         ImGui::Text("Note: Enter full path to trace file");
         ImGui::Text("Example: /path/to/trace.ggmlviz");
     }
@@ -472,14 +433,14 @@ void ImGuiApp::render_file_browser() {
 
 bool ImGuiApp::load_trace_file(const std::string& filename) {
     try {
-        // if live mode is active, disable it first
+
         if (data_->live_mode) {
             disable_live_mode();
         }
-        // First check if file exists and is accessible
+
         FILE* test_file = fopen(filename.c_str(), "rb");
         if (!test_file) {
-            // Determine specific reason for file access failure
+
             if (filename.empty()) {
                 data_->error_message = "Error: No file path specified.";
             } else if (filename.find_last_of('.') == std::string::npos || 
@@ -492,7 +453,7 @@ bool ImGuiApp::load_trace_file(const std::string& filename) {
             return false;
         }
         
-        // Check if file is empty
+
         fseek(test_file, 0, SEEK_END);
         long file_size = ftell(test_file);
         fclose(test_file);
@@ -509,10 +470,10 @@ bool ImGuiApp::load_trace_file(const std::string& filename) {
             return false;
         }
         
-        // Now attempt to load with TraceReader
+
         auto reader = std::make_unique<TraceReader>(filename);
         if (!reader->is_valid()) {
-            // Determine specific reason for TraceReader failure
+
             FILE* check_file = fopen(filename.c_str(), "rb");
             if (check_file) {
                 char magic[8] = {0};
@@ -537,15 +498,15 @@ bool ImGuiApp::load_trace_file(const std::string& filename) {
             return false;
         }
         
-        // Check if trace file has any meaningful data
+
         if (reader->event_count() == 0) {
             data_->error_message = "Warning: Empty trace data.\n\nFile: " + filename + 
                                   "\n\nThe trace file loaded successfully but contains no events.\n" +
                                   "This might indicate:\n• No GGML operations were traced\n• Tracing was not enabled\n• The model ran but no operations occurred";
-            // Still allow loading empty traces for debugging
+
         }
         
-        // Success - load the trace
+
         data_->trace_reader = std::move(reader);
         data_->trace_loaded = true;
         data_->current_filename = filename.substr(filename.find_last_of("/\\") + 1); // Just filename for display
@@ -571,11 +532,11 @@ bool ImGuiApp::load_trace_file(const std::string& filename) {
 }
 
 void ImGuiApp::render_timeline_view() {
-    // Color-code timeline panel (blue)
+
     ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.13f, 0.54f, 0.82f, 1.0f)); // Blue color
     
     if (ImGui::Begin("Timeline View")) {
-        // Handle both live mode and loaded traces
+
         const std::vector<Event>* events_ptr = nullptr;
         size_t event_count = 0;
         std::string mode_info;
@@ -585,7 +546,7 @@ void ImGuiApp::render_timeline_view() {
             event_count = data_->live_events.size();
             mode_info = "[LIVE MODE]";
             
-            // Show live mode status
+
             auto& hook = GGMLHook::instance();
             if (hook.is_active()) {
                 ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "✅ LIVE MODE ACTIVE");
@@ -612,12 +573,12 @@ void ImGuiApp::render_timeline_view() {
         
         const auto& events = *events_ptr;
         
-        // Summary information
+
         ImGui::Text("%s", mode_info.c_str());
         ImGui::Text("Total Events: %zu", events.size());
         
         if (data_->live_mode) {
-            // Calculate duration from live events
+
             if (events.size() >= 2) {
                 uint64_t duration_ns = events.back().timestamp_ns - events.front().timestamp_ns;
                 ImGui::Text("Duration: %.2f ms", duration_ns / 1e6);
@@ -633,7 +594,7 @@ void ImGuiApp::render_timeline_view() {
         
         ImGui::Separator();
         
-        // Search/Filter bar for operations
+
         static char search_buffer[256] = "";
         ImGui::InputTextWithHint("##search", "🔍 Filter operations...", search_buffer, sizeof(search_buffer));
         ImGui::SameLine();
@@ -641,11 +602,11 @@ void ImGuiApp::render_timeline_view() {
             search_buffer[0] = '\0';
         }
         
-        // Tabs for different views
+
         if (ImGui::BeginTabBar("TimelineViews")) {
-            // Visual Timeline tab
+
             if (ImGui::BeginTabItem("Visual Timeline")) {
-                // Render the custom timeline widget
+
                 const TraceReader* trace_reader_for_widget = nullptr;
                 if (data_->live_mode && data_->live_trace_reader) {
                     trace_reader_for_widget = data_->live_trace_reader.get();
@@ -656,48 +617,48 @@ void ImGuiApp::render_timeline_view() {
                 if (trace_reader_for_widget) {
                     timeline_widget_.render("##timeline", trace_reader_for_widget, timeline_config_);
                     
-                    // Sync selection between timeline widget and event details
+
                     int selected = timeline_widget_.get_selected_event();
                     if (selected != data_->selected_event) {
                         data_->selected_event = selected;
                     }
                 } else {
-                    // Draw railway-track backdrop for empty timeline
+
                     ImDrawList* draw_list = ImGui::GetWindowDrawList();
                     ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
                     ImVec2 canvas_size = ImGui::GetContentRegionAvail();
                     
                     if (canvas_size.x > 100 && canvas_size.y > 50) {
-                        // Draw railway track background
+
                         ImU32 track_color = IM_COL32(80, 80, 80, 100);
                         ImU32 tie_color = IM_COL32(60, 60, 60, 150);
                         
-                        // Draw horizontal tracks
+
                         float track_y1 = canvas_pos.y + canvas_size.y * 0.4f;
                         float track_y2 = canvas_pos.y + canvas_size.y * 0.6f;
                         draw_list->AddLine(ImVec2(canvas_pos.x, track_y1), ImVec2(canvas_pos.x + canvas_size.x, track_y1), track_color, 3.0f);
                         draw_list->AddLine(ImVec2(canvas_pos.x, track_y2), ImVec2(canvas_pos.x + canvas_size.x, track_y2), track_color, 3.0f);
                         
-                        // Draw railroad ties
+
                         for (float x = canvas_pos.x; x < canvas_pos.x + canvas_size.x; x += 30) {
                             draw_list->AddLine(ImVec2(x, track_y1 - 10), ImVec2(x, track_y2 + 10), tie_color, 2.0f);
                         }
                         
-                        // Center the waiting text
+
                         ImVec2 text_pos = ImVec2(canvas_pos.x + canvas_size.x * 0.5f - 100, canvas_pos.y + canvas_size.y * 0.5f - 20);
                         draw_list->AddText(text_pos, IM_COL32(150, 150, 150, 255), "Waiting for first operation...");
                     } else {
                         ImGui::Text("Waiting for first operation...");
                     }
                     
-                    // Reserve space for the backdrop
+
                     ImGui::Dummy(ImVec2(0, std::max(100.0f, canvas_size.y)));
                 }
                 
                 ImGui::EndTabItem();
             }
             
-            // Events tab
+
             if (ImGui::BeginTabItem("Events")) {
                 if (ImGui::BeginChild("EventList")) {
                     ImGuiListClipper clipper;
@@ -709,7 +670,7 @@ void ImGuiApp::render_timeline_view() {
                             
                             bool is_selected = (data_->selected_event == i);
                             
-                            // Format event info
+
                             std::string label = std::to_string(i) + ": " + event_type_name(event.type);
                             if (event.label) {
                                 label += " (" + std::string(event.label) + ")";
@@ -738,13 +699,13 @@ void ImGuiApp::render_timeline_view() {
                 ImGui::EndTabItem();
             }
             
-            // Operation timings tab
+
             if (ImGui::BeginTabItem("Op Timings")) {
                 if (ImGui::BeginChild("OpTimings")) {
                     if (data_->live_mode) {
                         ImGui::Text("Live mode: Operation timings calculated on-the-fly");
                         ImGui::Text("Events collected: %zu", events.size());
-                        // TODO: Calculate live operation timings from events
+
                     } else if (data_->trace_reader) {
                         auto op_timings = data_->trace_reader->get_op_timings();
                         uint64_t total_duration = data_->trace_reader->get_total_duration_ns();
@@ -787,7 +748,7 @@ void ImGuiApp::render_timeline_view() {
 }
 
 void ImGuiApp::render_graph_view() {
-    // Color-code graph panel (green)
+
     ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.30f, 0.69f, 0.31f, 1.0f)); // Green color
     
     if (ImGui::Begin("Graph View")) {
@@ -801,7 +762,7 @@ void ImGuiApp::render_graph_view() {
             ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "📊 LIVE GRAPH VIEW");
             ImGui::Text("Live events: %zu", data_->live_events.size());
             
-            // Count graph events in live mode
+
             size_t graph_begin_count = 0;
             size_t graph_end_count = 0;
             for (const auto& event : data_->live_events) {
@@ -813,13 +774,13 @@ void ImGuiApp::render_graph_view() {
             
             ImGui::Separator();
             
-            // Use live trace reader for graph visualization
+
             if (data_->live_trace_reader) {
                 graph_widget_.render("##compute_graph", data_->live_trace_reader.get(), graph_config_);
                 
-                // Sync selection between graph widget and other views
-                // TODO: Map node selection to event selection
-                // int selected = graph_widget_.get_selected_node(); // Unused for now
+
+
+
             } else {
                 ImGui::Text("Loading graph data...");
             }
@@ -830,14 +791,14 @@ void ImGuiApp::render_graph_view() {
             
             ImGui::Separator();
             
-            // Render the graph widget
+
             graph_widget_.render("##compute_graph", data_->trace_reader.get(), graph_config_);
             
             // Sync selection between graph widget and other views
             int selected_node = graph_widget_.get_selected_node();
             if (selected_node >= 0) {
-                // In a complete implementation, we would map node selection back to events
-                // For now, just show that a node is selected
+
+
                 ImGui::Text("Selected Node: %d", selected_node);
             }
         }
@@ -847,7 +808,7 @@ void ImGuiApp::render_graph_view() {
 }
 
 void ImGuiApp::render_tensor_inspector() {
-    // Color-code tensor inspector panel (pink)
+
     ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.91f, 0.12f, 0.39f, 1.0f)); // Pink color
     
     if (ImGui::Begin("Tensor Inspector")) {
@@ -892,7 +853,7 @@ void ImGuiApp::render_tensor_inspector() {
                     ImGui::Text("Label: %s", event.label);
                 }
                 
-                // TODO: Add tensor-specific inspection
+
             } else {
                 ImGui::Text("Select an event from the timeline to inspect");
             }
@@ -903,7 +864,7 @@ void ImGuiApp::render_tensor_inspector() {
 }
 
 void ImGuiApp::render_memory_view() {
-    // Color-code memory view panel (orange)
+
     ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(1.0f, 0.60f, 0.0f, 1.0f)); // Orange color
     
     if (ImGui::Begin("Memory View")) {
@@ -920,13 +881,13 @@ void ImGuiApp::render_memory_view() {
 }
 
 void ImGuiApp::render_hook_status_notification() {
-    // Check if we should show the hook status notification
+
     bool should_show_notification = false;
     std::string notification_text;
     
     if (data_->live_mode) {
         if (data_->live_mode_no_hook) {
-            // File-based live mode
+
             if (!data_->live_trace_reader || data_->live_trace_reader->events().empty()) {
                 should_show_notification = true;
                 notification_text = "📄  FILE-BASED LIVE MODE - WAITING FOR DATA\n\n"
@@ -939,7 +900,7 @@ void ImGuiApp::render_hook_status_notification() {
                                   "    -p \"Hello world\" -n 10";
             }
         } else {
-            // Ring buffer live mode
+
             try {
                 auto& hook = GGMLHook::instance();
                 if (!hook.is_active()) {
@@ -988,7 +949,7 @@ void ImGuiApp::render_hook_status_notification() {
             ImGui::EndPopup();
         }
         
-        // Auto-open the popup
+
         if (!ImGui::IsPopupOpen("Hook Status")) {
             ImGui::OpenPopup("Hook Status");
         }
@@ -996,7 +957,7 @@ void ImGuiApp::render_hook_status_notification() {
 }
 
 void ImGuiApp::render_stats_overlay() {
-    // Position in top-right corner
+
     const float DISTANCE = 10.0f;
     ImGuiIO& io = ImGui::GetIO();
     ImVec2 window_pos = ImVec2(io.DisplaySize.x - DISTANCE, DISTANCE);
@@ -1010,10 +971,10 @@ void ImGuiApp::render_stats_overlay() {
         ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | 
         ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav)) {
         
-        // FPS
+
         ImGui::Text("FPS: %.1f", io.Framerate);
         
-        // Event stats
+
         if (data_->live_mode) {
             try {
                 auto& hook = GGMLHook::instance();

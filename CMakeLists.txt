@@ -1,30 +1,23 @@
 cmake_minimum_required(VERSION 3.15)
 project(ggml-viz VERSION 0.0.12 LANGUAGES C CXX)
 
-# Enable Objective-C only on Apple platforms
 if(APPLE)
     enable_language(OBJC)
 endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-# Enforce C++17
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Find required packages
 find_package(Threads REQUIRED)
 find_package(OpenGL REQUIRED)
 
 add_subdirectory(third_party)
 
-# GGML submodule - Note: OpenMP warnings are expected and safe to ignore
-# On macOS with Apple Silicon, GGML uses Accelerate framework (optimal performance)
-# On Linux, GGML will use available BLAS libraries or fall back to CPU-only
-# The "OpenMP not found" warning does not affect functionality
+# OpenMP warnings are expected: macOS uses Accelerate, Linux uses available BLAS
 add_subdirectory(third_party/ggml)
 
-# Windows-specific dependencies
 if(WIN32)
     include(FetchContent)
     FetchContent_Declare(
@@ -34,8 +27,7 @@ if(WIN32)
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_MakeAvailable(minhook)
-    
-    # Build our own static library from MinHook sources
+
     add_library(MinHook STATIC
         ${minhook_SOURCE_DIR}/src/buffer.c
         ${minhook_SOURCE_DIR}/src/hook.c
@@ -49,19 +41,11 @@ if(WIN32)
         OUTPUT_NAME "MinHook"
         POSITION_INDEPENDENT_CODE ON
     )
-
 endif()
 
-# Build our instrumentation library
 add_subdirectory(src)
-
-# Build examples (demos)
 add_subdirectory(examples)
 
-# Build and run tests
 enable_testing()
 add_subdirectory(tests)
-
-
-# Test executables are now defined in tests/CMakeLists.txt
 

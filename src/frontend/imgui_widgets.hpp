@@ -1,4 +1,4 @@
-// src/frontend/imgui_widgets.hpp
+
 #pragma once
 
 #include "imgui.h"

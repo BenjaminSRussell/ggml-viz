@@ -1,4 +1,4 @@
-// src/instrumentation/ggml_hook.cpp
+
 #include "ggml_hook.hpp"
 #include "../utils/config.hpp"
 #include "ggml-impl.h" // for ggml_cgraph, ggml_tensor

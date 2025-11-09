@@ -1,4 +1,4 @@
-// src/main.cpp
+
 #include "frontend/imgui_app.hpp"
 #include "server/live_data_collector.hpp"
 #include "utils/logger.hpp"

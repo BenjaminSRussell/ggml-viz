@@ -1,4 +1,3 @@
-// src/instrumentation/ggml_hook.hpp
 #pragma once
 
 #include <cstdint>
@@ -14,7 +13,6 @@ struct ggml_cgraph;
 struct ggml_compute_params;
 struct ggml_backend;
 
-// Conditional compilation for function overrides
 #ifndef GGML_VIZ_TEST_MODE
   #ifdef _WIN32
     #define GGML_VIZ_API __declspec(dllexport)
@@ -22,7 +20,7 @@ struct ggml_backend;
     #define GGML_VIZ_API __attribute__((visibility("default")))
   #endif
 #else
-  #define GGML_VIZ_API 
+  #define GGML_VIZ_API
 #endif
 
 namespace ggml_viz {
@@ -39,7 +37,6 @@ enum class EventType : uint8_t {
     THREAD_FREE
 };
 
-// Utility function to convert EventType to human-readable string
 constexpr const char* event_type_name(EventType type) {
     switch (type) {
         case EventType::GRAPH_COMPUTE_BEGIN: return "GRAPH_BEGIN";
@@ -57,7 +54,7 @@ constexpr const char* event_type_name(EventType type) {
 
 struct Event {
     EventType type;
-    uint64_t timestamp_ns; // nanoseconds since epoch
+    uint64_t timestamp_ns;
     uint32_t thread_id;
 
     union {
@@ -81,47 +78,35 @@ struct Event {
         } memory;
     } data;
 
-    // Optional string data (e.g, tensor names)
     const char* label;
 };
 
-// Legacy HookConfig struct - deprecated in favor of ConfigManager
-// Kept for backward compatibility
 struct HookConfig {
     bool enable_op_timing = true;
     bool enable_memory_tracking = false;
     bool enable_thread_tracking = false;
     bool enable_tensor_names = true;
 
-    // Output modes
     bool write_to_file = true;
     std::string output_filename = "ggml_trace.bin";
 
-    // Filtering
-    std::vector<uint32_t> op_types_to_trace; // Empty = trace all
+    std::vector<uint32_t> op_types_to_trace;
     size_t max_events = 1000000;
 };
 
 class GGMLHook {
 public:
     static GGMLHook& instance();
-    
-    // Config (deprecated - use ConfigManager instead)
+
     void configure(const HookConfig& config);
 
-    // Control
     void start();
     void stop();
     bool is_active() const { return active_.load(); }
 
-    // Stats
     size_t event_count() const { return event_count_.load(); }
-    void reset_stats();    
-
-    // Data access (for live viewers)
+    void reset_stats();
     std::vector<Event> get_events_size(uint64_t timestamp_ns);
-    
-    // Live data access for real-time visualization
     std::vector<Event> consume_available_events();
     Event* get_ring_buffer() { return event_buffer_; }
     size_t get_buffer_size() const { return BUFFER_SIZE; }
@@ -133,16 +118,13 @@ public:
     void on_graph_compute_end(const ggml_cgraph* graph, const ggml_backend* backend = nullptr);
     void on_op_compute_begin(const ggml_tensor* tensor, const ggml_backend* backend = nullptr);
     void on_op_compute_end(const ggml_tensor* tensor, const ggml_backend* backend = nullptr);
-    
-    // Memory tracking hooks
     void on_tensor_alloc(const ggml_tensor* tensor, size_t size, const ggml_backend* backend = nullptr);
     void on_tensor_free(const ggml_tensor* tensor, const ggml_backend* backend = nullptr);
 
-    // Destructor flushes data
     ~GGMLHook();
 
 private:
-    GGMLHook(); // Constructor with environment variable initialization
+    GGMLHook();
     GGMLHook(const GGMLHook&) = delete;
     GGMLHook& operator=(const GGMLHook&) = delete;
 
@@ -152,43 +134,31 @@ private:
     std::atomic<bool> active_{false};
     std::atomic<size_t> event_count_{0};
 
-    // Lock-free SPSC ring buffer
-    // Cache-line aligned atomics to prevent false sharing  
     struct alignas(64) IndexPad {
         std::atomic<uint64_t> v{0};
         char _pad[64 - sizeof(std::atomic<uint64_t>)];
     };
-    
-    static constexpr size_t BUFFER_SIZE = 65536; // Must be pow of 2
+
+    static constexpr size_t BUFFER_SIZE = 65536;
     Event event_buffer_[BUFFER_SIZE];
-    
-    // head = producer write position, tail = consumer read position
-    IndexPad write_pos_;  // head (producer)
-    IndexPad read_pos_;   // tail (consumer) 
-    
-    // Dropped events counter for backpressure monitoring
+
+    IndexPad write_pos_;
+    IndexPad read_pos_;
+
     std::atomic<uint64_t> dropped_events_{0};
-    
+
     std::mutex file_mutex_;
-
     FILE* output_file_ = nullptr;
-
     std::chrono::steady_clock::time_point start_time_;
 };
-
-// Note: GGML_VIZ_API is defined at the top of the file
 
 extern "C" {
     GGML_VIZ_API void ggml_viz_hook_graph_compute_begin(const ggml_cgraph* graph, const ggml_backend* backend = nullptr);
     GGML_VIZ_API void ggml_viz_hook_graph_compute_end(const ggml_cgraph* graph, const ggml_backend* backend = nullptr);
     GGML_VIZ_API void ggml_viz_hook_op_compute_begin(const ggml_tensor* tensor, const ggml_backend* backend = nullptr);
     GGML_VIZ_API void ggml_viz_hook_op_compute_end(const ggml_tensor* tensor, const ggml_backend* backend = nullptr);
-    
-    // Memory tracking hooks
     GGML_VIZ_API void ggml_viz_hook_tensor_alloc(const ggml_tensor* tensor, size_t size, const ggml_backend* backend = nullptr);
     GGML_VIZ_API void ggml_viz_hook_tensor_free(const ggml_tensor* tensor, const ggml_backend* backend = nullptr);
-    
-    // Status functions for debugging
     GGML_VIZ_API bool ggml_viz_is_initialized();
     GGML_VIZ_API void ggml_viz_print_status();
 }

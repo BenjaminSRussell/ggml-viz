@@ -1,4 +1,4 @@
-// src/utils/trace_reader.cpp
+
 #include "trace_reader.hpp"
 #include <iostream>
 #include <algorithm>

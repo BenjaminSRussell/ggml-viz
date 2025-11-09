@@ -1,4 +1,4 @@
-// src/frontend/imgui_widgets.cpp
+
 #include "imgui_widgets.hpp"
 #include <algorithm>
 #include <unordered_map>

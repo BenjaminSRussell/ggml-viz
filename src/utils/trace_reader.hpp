@@ -1,4 +1,4 @@
-// src/utils/trace_reader.hpp
+
 #pragma once
 
 #include "instrumentation/ggml_hook.hpp"

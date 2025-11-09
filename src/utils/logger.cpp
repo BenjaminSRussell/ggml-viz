@@ -1,4 +1,4 @@
-// src/utils/logger.cpp
+
 #include "logger.hpp"
 #include "config.hpp"
 #include <cstdlib>
