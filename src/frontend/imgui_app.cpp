@@ -172,6 +172,8 @@ void ImGuiApp::enable_live_mode(bool no_hook, const std::string& trace_file) {
             // Default to monitoring a temporary file
             data_->live_file_path = "test.ggmlviz";
             std::cout << "[ImGuiApp] No GGML_VIZ_OUTPUT set, monitoring default: " << data_->live_file_path << std::endl;
+            std::cout << "[ImGuiApp] NOTE: 0 events is expected until you run a GGML application" << std::endl;
+            std::cout << "[ImGuiApp]       Run with LD_PRELOAD or DYLD_INSERT_LIBRARIES to capture events" << std::endl;
         }
     }
     

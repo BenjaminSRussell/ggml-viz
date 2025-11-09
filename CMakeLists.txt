@@ -17,6 +17,11 @@ find_package(Threads REQUIRED)
 find_package(OpenGL REQUIRED)
 
 add_subdirectory(third_party)
+
+# GGML submodule - Note: OpenMP warnings are expected and safe to ignore
+# On macOS with Apple Silicon, GGML uses Accelerate framework (optimal performance)
+# On Linux, GGML will use available BLAS libraries or fall back to CPU-only
+# The "OpenMP not found" warning does not affect functionality
 add_subdirectory(third_party/ggml)
 
 # Windows-specific dependencies
@@ -26,6 +31,7 @@ if(WIN32)
         minhook
         GIT_REPOSITORY https://github.com/TsudaKageyu/minhook.git
         GIT_TAG        v1.3.3
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_MakeAvailable(minhook)
     
