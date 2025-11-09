@@ -39,6 +39,22 @@ enum class EventType : uint8_t {
     THREAD_FREE
 };
 
+// Utility function to convert EventType to human-readable string
+constexpr const char* event_type_name(EventType type) {
+    switch (type) {
+        case EventType::GRAPH_COMPUTE_BEGIN: return "GRAPH_BEGIN";
+        case EventType::GRAPH_COMPUTE_END:   return "GRAPH_END";
+        case EventType::OP_COMPUTE_BEGIN:    return "OP_BEGIN";
+        case EventType::OP_COMPUTE_END:      return "OP_END";
+        case EventType::TENSOR_ALLOC:        return "TENSOR_ALLOC";
+        case EventType::TENSOR_FREE:         return "TENSOR_FREE";
+        case EventType::BARRIER_WAIT:        return "BARRIER_WAIT";
+        case EventType::THREAD_BEGIN:        return "THREAD_BEGIN";
+        case EventType::THREAD_FREE:         return "THREAD_FREE";
+        default:                             return "UNKNOWN";
+    }
+}
+
 struct Event {
     EventType type;
     uint64_t timestamp_ns; // nanoseconds since epoch

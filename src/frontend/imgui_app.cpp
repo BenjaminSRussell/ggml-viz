@@ -20,27 +20,43 @@ struct ImGuiApp::AppData {
     std::unique_ptr<TraceReader> trace_reader;
     std::string current_filename;
     std::string error_message;
-    
+
     // UI state
     bool trace_loaded = false;
     int selected_event = -1;
-    
+
     // Live mode support
     bool live_mode = false;
     bool live_mode_no_hook = false;  // Track if we're using --no-hook flag
     std::vector<Event> live_events;
-    
+
     std::chrono::steady_clock::time_point last_live_update;
     std::atomic<bool> live_data_available{false};
-    
+
     // File monitoring for external processes
     std::string live_file_path;
     std::time_t last_file_mod_time = 0;
     size_t last_file_size = 0;
+    size_t last_file_event_count = 0;
+    std::chrono::steady_clock::time_point last_file_check_time;
     std::unique_ptr<TraceReader> live_trace_reader;
-    
+
     // File browser state
-    char file_path_buffer[512] = {0};
+    static constexpr size_t FILE_PATH_BUFFER_SIZE = 512;
+    char file_path_buffer[FILE_PATH_BUFFER_SIZE] = {0};
+
+    // Constants
+    static constexpr size_t MAX_LIVE_EVENTS = 50'000;
+
+    // Helper methods
+    void limit_live_events_buffer() {
+        if (live_events.size() > MAX_LIVE_EVENTS) {
+            live_events.erase(
+                live_events.begin(),
+                live_events.end() - MAX_LIVE_EVENTS
+            );
+        }
+    }
 };
 
 ImGuiApp::ImGuiApp() : data_(std::make_unique<AppData>()) {
@@ -56,7 +72,7 @@ int ImGuiApp::run() {
     }
 
     if (!data_->window) {
-        std::cerr << "IMG ERROR: Window build fail\n";
+        std::cerr << "[ImGuiApp] ERROR: Failed to create window\n";
         return -1;
     }
     
@@ -199,61 +215,34 @@ bool ImGuiApp::is_live_mode() const {
 
 void ImGuiApp::update_live_data() {
     if (!data_->live_mode) return;
-    
-    static int call_count = 0;
-    if (++call_count % 100 == 0) {  // Only print every 100 calls to avoid spam
-        std::cout << "[ImGuiApp] update_live_data() called (file: " << data_->live_file_path 
-                  << ", events: " << data_->live_events.size() << ")" << std::endl;
-    }
-    
+
     // Try to get live events from GGMLHook (in-process events)
     try {
         auto& hook = GGMLHook::instance();
         if (hook.is_active()) {
             auto new_events = hook.consume_available_events();
             if (!new_events.empty()) {
-                // DEBUG: Count event types in new batch
-                size_t new_memory_events = 0;
-                for (const auto& event : new_events) {
-                    if (event.type == EventType::TENSOR_ALLOC || event.type == EventType::TENSOR_FREE) {
-                        new_memory_events++;
-                    }
-                }
-                
-                if (call_count % 100 == 0) {  // Only print every 100 calls
-                    std::cout << "[ImGuiApp] DEBUG: Got " << new_events.size() << " new events (" 
-                              << new_memory_events << " memory events)" << std::endl;
-                }
-                
                 // Add new events to our live buffer
                 data_->live_events.insert(data_->live_events.end(), new_events.begin(), new_events.end());
                 data_->last_live_update = std::chrono::steady_clock::now();
                 data_->live_data_available = true;
-                
+
                 // Limit buffer size to prevent memory issues
-                const size_t max_events = 50000;
-                if (data_->live_events.size() > max_events) {
-                    data_->live_events.erase(data_->live_events.begin(), 
-                                           data_->live_events.begin() + (data_->live_events.size() - max_events));
-                }
-            }
-        } else {
-            if (call_count % 100 == 0) {
-                std::cout << "[ImGuiApp] DEBUG: Hook is not active" << std::endl;
+                data_->limit_live_events_buffer();
             }
         }
     } catch (const std::exception& e) {
         std::cerr << "[ImGuiApp] Error updating live data from hook: " << e.what() << std::endl;
     }
-    
+
+
     // Also monitor external trace file for events from external processes
     // Only check file every 100ms to avoid too frequent polling
-    static auto last_file_check = std::chrono::steady_clock::now();
     auto now = std::chrono::steady_clock::now();
-    auto time_since_last_check = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_file_check);
-    
+    auto time_since_last_check = std::chrono::duration_cast<std::chrono::milliseconds>(now - data_->last_file_check_time);
+
     if (!data_->live_file_path.empty() && time_since_last_check.count() > 100) {
-        last_file_check = now;
+        data_->last_file_check_time = now;
         
         try {
             struct stat file_stat;
@@ -268,48 +257,43 @@ void ImGuiApp::update_live_data() {
                     auto new_trace_reader = std::make_unique<TraceReader>(data_->live_file_path);
                     if (new_trace_reader->is_valid()) {
                         const auto& events = new_trace_reader->events();
-                        
+
                         // Handle file recreation/truncation by detecting if file has fewer events than expected
-                        static size_t last_file_event_count = 0;
                         size_t start_idx = 0;
-                        
-                        if (data_->live_trace_reader && events.size() >= last_file_event_count) {
+
+                        if (data_->live_trace_reader && events.size() >= data_->last_file_event_count) {
                             // File appears to be growing normally, only load new events
-                            start_idx = last_file_event_count;
+                            start_idx = data_->last_file_event_count;
                         } else {
                             // File was recreated/truncated or this is first load, load all events
                             start_idx = 0;
                             std::cout << "[ImGuiApp] File appears to be recreated/truncated, loading all events" << std::endl;
                         }
-                        
+
                         if (events.size() > start_idx) {
                             // Add new events to our live buffer
                             size_t new_event_count = events.size() - start_idx;
-                            data_->live_events.insert(data_->live_events.end(), 
+                            data_->live_events.insert(data_->live_events.end(),
                                                      events.begin() + start_idx, events.end());
                             data_->last_live_update = std::chrono::steady_clock::now();
                             data_->live_data_available = true;
-                            
-                            std::cout << "[ImGuiApp] Loaded " << new_event_count 
+
+                            std::cout << "[ImGuiApp] Loaded " << new_event_count
                                       << " new events from external file (total events in file: " << events.size() << ")" << std::endl;
-                            
-                            last_file_event_count = events.size();
+
+                            data_->last_file_event_count = events.size();
                         } else {
-                            std::cout << "[ImGuiApp] No new events to load (file has " << events.size() 
-                                      << " events, last processed: " << last_file_event_count << ")" << std::endl;
+                            std::cout << "[ImGuiApp] No new events to load (file has " << events.size()
+                                      << " events, last processed: " << data_->last_file_event_count << ")" << std::endl;
                         }
-                        
+
                         // Update file monitoring state
                         data_->last_file_mod_time = file_stat.st_mtime;
                         data_->last_file_size = file_stat.st_size;
                         data_->live_trace_reader = std::move(new_trace_reader);
-                        
-                        // Limit buffer size
-                        const size_t max_events = 50000;
-                        if (data_->live_events.size() > max_events) {
-                            data_->live_events.erase(data_->live_events.begin(), 
-                                                   data_->live_events.begin() + (data_->live_events.size() - max_events));
-                        }
+
+                        // Limit buffer size to prevent memory issues
+                        data_->limit_live_events_buffer();
                     }
                 }
             }
@@ -726,25 +710,7 @@ void ImGuiApp::render_timeline_view() {
                             bool is_selected = (data_->selected_event == i);
                             
                             // Format event info
-                            std::string event_name;
-                            switch(event.type) {
-                                case EventType::GRAPH_COMPUTE_BEGIN:
-                                    event_name = "GRAPH_BEGIN";
-                                    break;
-                                case EventType::GRAPH_COMPUTE_END:
-                                    event_name = "GRAPH_END";
-                                    break;
-                                case EventType::OP_COMPUTE_BEGIN:
-                                    event_name = "OP_BEGIN";
-                                    break;
-                                case EventType::OP_COMPUTE_END:
-                                    event_name = "OP_END";
-                                    break;
-                                default:
-                                    event_name = "UNKNOWN";
-                            }
-                            
-                            std::string label = std::to_string(i) + ": " + event_name;
+                            std::string label = std::to_string(i) + ": " + event_type_name(event.type);
                             if (event.label) {
                                 label += " (" + std::string(event.label) + ")";
                             }
