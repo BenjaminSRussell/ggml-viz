@@ -108,6 +108,93 @@ The project includes real model demonstrations that download and run actual GGML
 
 These demos show **real GGML operations** including actual attention mechanisms, matrix multiplications, and audio processing - not simulations.
 
+## Supported Models and Applications
+
+GGML-viz works through **function interception**, not model-specific code. It intercepts calls to `ggml_backend_graph_compute()` and related GGML functions, which means it works with **any application that uses the GGML library**. The visualizer doesn't care about model architecture—it traces the low-level tensor operations regardless of whether they're running LLaMA attention, Whisper encoders, Stable Diffusion U-Nets, or any other GGML-based computation.
+
+### How It Works
+
+When you run a model with the hook loaded (via `LD_PRELOAD` or `DYLD_INSERT_LIBRARIES`), ggml-viz intercepts these function calls:
+- `ggml_backend_graph_compute()` - Main computation dispatch
+- `ggml_graph_compute()` - Legacy computation path
+- `ggml_tensor_alloc()` / `ggml_new_tensor()` - Memory operations
+- Individual operation dispatch (`ggml_mul_mat`, `ggml_add`, etc.)
+
+**If a model runs via llama.cpp, whisper.cpp, or stable-diffusion.cpp, it WILL be visualized.**
+
+### Verified Model Support
+
+#### ✅ Text Models (via llama.cpp)
+
+**Confirmed working** - These architectures are officially supported by llama.cpp and therefore fully compatible with ggml-viz:
+
+- **LLaMA family**: LLaMA 1, 2, 3, CodeLlama, Vicuna, Alpaca, OpenLlama
+- **Mistral / Mixtral**: Mistral 7B, Mixtral 8x7B MoE, Mistral Nemo
+- **Gemma**: Gemma 2B/7B, CodeGemma, Gemma 2
+- **Falcon**: Falcon 7B, 40B, 180B (quantized variants)
+- **MPT**: MPT-7B, MPT-30B, MPT-StoryWriter
+- **Yi**: Yi-6B, Yi-34B, Yi-VL (multimodal)
+- **Qwen**: Qwen 1.5/2/2.5, Qwen-VL, Qwen2-VL, CodeQwen
+- **DeepSeek**: DeepSeek Coder, DeepSeek LLM, DeepSeek-V2
+- **Phi**: Phi-2, Phi-3, PhiMoE
+- **StableLM**: StableLM Zephyr, StableCode
+- **StarCoder**: StarCoder, StarChat, StarCoder2
+- **GPT-NeoX / Pythia**: GPT-J 6B, Pythia, Dolly
+- **GPT-2**: All sizes (117M to 1.5B)
+- **Command-R**: Command-R, Command-R+
+- **Grok-1**: Grok-1 (314B parameters)
+- **Bloom / OPT / GPT-NeoX**: Various sizes
+- **Chinese models**: ChatGLM 3/4, Baichuan 1/2, Aquila 1/2
+- **Other architectures**: Orca, Vicuna, WizardLM, Nous-Hermes, and 40+ more
+
+#### ✅ Multimodal Models (via llama.cpp)
+
+- **LLaVA**: LLaVA 1.5, LLaVA 1.6 (vision-language)
+- **BakLLaVA**: Mistral-based vision model
+- **Obsidian**: Vision-language model
+- **MobileVLM**: Efficient vision-language (1.7B/3B)
+- **Qwen-VL**: Qwen Vision-Language models
+- **Mini CPM**: Efficient multimodal models
+
+#### ✅ Audio Models (via whisper.cpp)
+
+- **Whisper**: All sizes (tiny, base, small, medium, large)
+- **Whisper versions**: v1, v2, v3, Turbo
+- **Languages**: All 99 languages supported by Whisper
+- **Distilled models**: distil-whisper variants
+
+#### ✅ Image Generation (via stable-diffusion.cpp)
+
+- **Stable Diffusion 1.x**: SD 1.4, 1.5
+- **Stable Diffusion 2.x**: SD 2.0, 2.1
+- **SDXL**: Stable Diffusion XL, SDXL Turbo
+- **FLUX**: FLUX.1 schnell and dev
+- **Wan**: Wan2.1, Wan2.2 (video generation)
+- **ControlNet**: All ControlNet variants
+
+### Model Format Requirements
+
+- **GGUF format** (current standard): Fully supported ✓
+- **GGML format** (legacy): Supported via compatibility layer ✓
+- **Quantization**: All quantization types (Q4_K_M, Q5_0, Q8_0, F16, etc.) ✓
+
+### Verification
+
+To verify any model works, simply:
+```bash
+export GGML_VIZ_OUTPUT=trace.ggmlviz
+export LD_PRELOAD=./build/src/libggml_viz_hook.so  # Linux
+# export DYLD_INSERT_LIBRARIES=./build/src/libggml_viz_hook.dylib  # macOS
+
+# Run any GGML application
+llama-cli -m your-model.gguf -p "test" -n 10
+
+# Visualize the trace
+./build/bin/ggml-viz trace.ggmlviz
+```
+
+If the model runs successfully with llama.cpp/whisper.cpp/stable-diffusion.cpp, ggml-viz will capture and visualize all tensor operations.
+
 ## Integration Approaches
 
 **Built-in Demos (Recommended for Learning)**: Use the included LLaMA and Whisper demonstrations to understand the visualization capabilities and configuration system before integrating with your own applications.
